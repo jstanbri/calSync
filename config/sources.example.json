@@ -5,10 +5,46 @@
     "masterCalendarId": "REPLACE_WITH_MASTER_GOOGLE_CALENDAR_ID"
   },
   "sources": [
-    { "name": "M365 Work 1", "type": "ics", "url": "https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics", "prefix": "[W1] ", "enabled": true },
-    { "name": "M365 Work 2", "type": "ics", "url": "https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics", "prefix": "[W2] ", "enabled": true },
-    { "name": "M365 Work 3", "type": "ics", "url": "https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics", "prefix": "[W3] ", "enabled": true },
-    { "name": "M365 Work 4", "type": "ics", "url": "https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics", "prefix": "[W4] ", "enabled": true },
-    { "name": "Google Personal", "type": "ics", "url": "https://calendar.google.com/calendar/ical/REPLACE/private-REPLACE/basic.ics", "prefix": "", "enabled": true }
+    {
+      "name": "M365 Work 1",
+      "type": "ics",
+      "url": "https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics",
+      "prefix": "[W1] ",
+      "enabled": true
+    },
+    {
+      "name": "M365 Work (no ICS publishing) via Graph",
+      "type": "graph",
+      "prefix": "[PB] ",
+      "enabled": false
+    },
+    {
+      "name": "M365 Work 2",
+      "type": "ics",
+      "url": "https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics",
+      "prefix": "[W2] ",
+      "enabled": true
+    },
+    {
+      "name": "M365 Work 3",
+      "type": "ics",
+      "url": "https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics",
+      "prefix": "[W3] ",
+      "enabled": true
+    },
+    {
+      "name": "M365 Work 4",
+      "type": "ics",
+      "url": "https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics",
+      "prefix": "[W4] ",
+      "enabled": true
+    },
+    {
+      "name": "Google Personal",
+      "type": "ics",
+      "url": "https://calendar.google.com/calendar/ical/REPLACE/private-REPLACE/basic.ics",
+      "prefix": "",
+      "enabled": true
+    }
   ]
 }

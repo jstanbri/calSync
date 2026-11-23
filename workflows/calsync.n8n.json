@@ -35,7 +35,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// n8n Code node \u2014 \"Load Config\", mode: Run Once for All Items.\n// The build script injects config/sources.json in place of the placeholder below.\nconst CONFIG = {\n  \"settings\": {\n    \"daysBack\": 7,\n    \"daysForward\": 90,\n    \"masterCalendarId\": \"REPLACE_WITH_MASTER_GOOGLE_CALENDAR_ID\"\n  },\n  \"sources\": [\n    {\n      \"name\": \"M365 Work 1\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W1] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"M365 Work 2\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W2] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"M365 Work 3\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W3] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"M365 Work 4\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W4] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"Google Personal\",\n      \"type\": \"ics\",\n      \"url\": \"https://calendar.google.com/calendar/ical/REPLACE/private-REPLACE/basic.ics\",\n      \"prefix\": \"\",\n      \"enabled\": true\n    }\n  ]\n};\nreturn CONFIG.sources\n  .filter(s => s.enabled !== false)\n  .map(source => ({ json: { settings: CONFIG.settings, source } }));\n"
+        "jsCode": "// n8n Code node \u2014 \"Load Config\", mode: Run Once for All Items.\n// The build script injects config/sources.json in place of the placeholder below.\nconst CONFIG = {\n  \"settings\": {\n    \"daysBack\": 7,\n    \"daysForward\": 90,\n    \"masterCalendarId\": \"REPLACE_WITH_MASTER_GOOGLE_CALENDAR_ID\"\n  },\n  \"sources\": [\n    {\n      \"name\": \"M365 Work 1\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W1] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"M365 Work (no ICS publishing) via Graph\",\n      \"type\": \"graph\",\n      \"prefix\": \"[PB] \",\n      \"enabled\": false\n    },\n    {\n      \"name\": \"M365 Work 2\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W2] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"M365 Work 3\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W3] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"M365 Work 4\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W4] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"Google Personal\",\n      \"type\": \"ics\",\n      \"url\": \"https://calendar.google.com/calendar/ical/REPLACE/private-REPLACE/basic.ics\",\n      \"prefix\": \"\",\n      \"enabled\": true\n    }\n  ]\n};\nreturn CONFIG.sources\n  .filter(s => s.enabled !== false)\n  .map(source => ({ json: { settings: CONFIG.settings, source } }));\n"
       },
       "id": "load-config",
       "name": "Load Config",
@@ -44,6 +44,141 @@
       "position": [
         220,
         200
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.source.type }}",
+                    "rightValue": "ics",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "ics"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.source.type }}",
+                    "rightValue": "graph",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "graph"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "by-type",
+      "name": "By Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        440,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://graph.microsoft.com/v1.0/me/calendarView",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "microsoftOutlookOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "startDateTime",
+              "value": "={{ new Date(Date.now() - $json.settings.daysBack * 864e5).toISOString() }}"
+            },
+            {
+              "name": "endDateTime",
+              "value": "={{ new Date(Date.now() + $json.settings.daysForward * 864e5).toISOString() }}"
+            },
+            {
+              "name": "$top",
+              "value": "100"
+            },
+            {
+              "name": "$select",
+              "value": "subject,start,end,isAllDay,isCancelled,location,bodyPreview"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "outlook.timezone=\"UTC\""
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "={{ $response.body['@odata.nextLink'] }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body['@odata.nextLink'] }}",
+              "limitPagesFetched": true,
+              "maxRequests": 20
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "fetch-graph",
+      "name": "Fetch Graph",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        240
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// n8n Code node \u2014 \"Parse Graph\", mode: Run Once for Each Item.\n// Input: one page of /me/calendarView (with Prefer: outlook.timezone=\"UTC\"), paired with its \"Load Config\" item.\n// Output: same {_kind:'batch'|'error'} shape as \"Parse ICS\".\nconst src = $('Load Config').item.json.source;\n\nif ($json.error || !Array.isArray($json.value)) {\n  return { json: { _kind: 'error', source: src.name, message: String($json.error?.message || $json.error || 'no Graph data') } };\n}\n\nconst utc = s => new Date(String(s).replace(/(\\.\\d{3})\\d*$/, '$1') + 'Z').toISOString();\nconst events = $json.value\n  .filter(e => !e.isCancelled)\n  .map(e => {\n    const allDay = !!e.isAllDay;\n    return {\n      _kind: 'event',\n      source: src.name,\n      prefix: src.prefix || '',\n      title: e.subject || '(no title)',\n      location: e.location?.displayName || '',\n      description: e.bodyPreview || '',\n      allDay,\n      start: utc(e.start.dateTime),\n      end: utc(e.end.dateTime),\n      startDate: allDay ? e.start.dateTime.slice(0, 10) : null,\n      endDate: allDay ? e.end.dateTime.slice(0, 10) : null,\n    };\n  });\n\nreturn { json: { _kind: 'batch', source: src.name, events } };\n"
+      },
+      "id": "parse-graph",
+      "name": "Parse Graph",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        240
       ]
     },
     {
@@ -64,7 +199,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        440,
+        660,
         100
       ],
       "onError": "continueRegularOutput",
@@ -80,7 +215,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        660,
+        880,
         100
       ]
     },
@@ -127,22 +262,18 @@
         440,
         300
       ],
-      "credentials": {
-        "googleCalendarOAuth2Api": {
-          "id": "",
-          "name": "Google Calendar account"
-        }
-      },
       "executeOnce": true
     },
     {
-      "parameters": {},
+      "parameters": {
+        "numberInputs": 3
+      },
       "id": "combine",
       "name": "Combine",
       "type": "n8n-nodes-base.merge",
-      "typeVersion": 3,
+      "typeVersion": 3.2,
       "position": [
-        880,
+        1100,
         200
       ]
     },
@@ -155,7 +286,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1100,
+        1320,
         200
       ]
     },
@@ -238,7 +369,7 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
       "position": [
-        1320,
+        1540,
         200
       ]
     },
@@ -265,15 +396,9 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1560,
+        1780,
         80
       ],
-      "credentials": {
-        "googleCalendarOAuth2Api": {
-          "id": "",
-          "name": "Google Calendar account"
-        }
-      },
       "onError": "continueErrorOutput"
     },
     {
@@ -299,15 +424,9 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1560,
+        1780,
         260
       ],
-      "credentials": {
-        "googleCalendarOAuth2Api": {
-          "id": "",
-          "name": "Google Calendar account"
-        }
-      },
       "retryOnFail": true
     },
     {
@@ -330,15 +449,9 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1560,
+        1780,
         440
       ],
-      "credentials": {
-        "googleCalendarOAuth2Api": {
-          "id": "",
-          "name": "Google Calendar account"
-        }
-      },
       "retryOnFail": true
     }
   ],
@@ -369,12 +482,30 @@
       "main": [
         [
           {
-            "node": "Fetch ICS",
+            "node": "By Type",
             "type": "main",
             "index": 0
           },
           {
             "node": "Get Master Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "By Type": {
+      "main": [
+        [
+          {
+            "node": "Fetch ICS",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch Graph",
             "type": "main",
             "index": 0
           }
@@ -392,6 +523,17 @@
         ]
       ]
     },
+    "Fetch Graph": {
+      "main": [
+        [
+          {
+            "node": "Parse Graph",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Parse ICS": {
       "main": [
         [
@@ -403,13 +545,24 @@
         ]
       ]
     },
-    "Get Master Events": {
+    "Parse Graph": {
       "main": [
         [
           {
             "node": "Combine",
             "type": "main",
             "index": 1
+          }
+        ]
+      ]
+    },
+    "Get Master Events": {
+      "main": [
+        [
+          {
+            "node": "Combine",
+            "type": "main",
+            "index": 2
           }
         ]
       ]
