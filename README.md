@@ -36,16 +36,10 @@ ICS links are secrets: anyone with the link can read the calendar. `config/sourc
 ## Quick start (Docker)
 
 ```bash
-# 1. n8n with ical.js available
-cat > Dockerfile <<'DOCKER'
-FROM docker.n8n.io/n8nio/n8n
-USER root
-RUN cd /usr/local/lib/node_modules/n8n && npm install ical.js@2.1.0
-USER node
-DOCKER
-docker build -t n8n-calsync .
-docker run -d --name n8n -p 5678:5678 -v n8n_data:/home/node/.n8n \
-  -e NODE_FUNCTION_ALLOW_EXTERNAL=ical.js n8n-calsync
+# 1. build n8n with ical.js baked in, and run it
+docker build -t n8n-calsync -f docker/Dockerfile docker/
+docker run -d --name n8n -p 5678:5678 -v n8n_data:/home/node/.n8n n8n-calsync
+# editor now at http://localhost:5678
 
 # 2. configure and build the workflow
 cp config/sources.example.json config/sources.json   # edit URLs + masterCalendarId
@@ -56,7 +50,7 @@ python3 scripts/build_workflow.py                     # writes workflows/calsync
 4. Open **Get Master Events**, **Create Event**, **Update Event**, **Delete Event** and select your Google Calendar credential.
 5. Run once manually and check the master calendar, then activate the workflow.
 
-> The Docker image path above can vary between n8n releases; adjust the `npm install` location if the build fails.
+> `docker/Dockerfile` installs `ical.js` into its own folder (`/opt/calsync`) and sets `NODE_PATH` and `NODE_FUNCTION_ALLOW_EXTERNAL`, rather than touching n8n's install tree, which breaks `npm install` on current images. It pulls `n8nio/n8n` from Docker Hub; `docker.n8n.io` rate-limits (HTTP 429) at times. Verified with n8n 2.48.8: image builds, `require('ical.js')` works in a Code node, and the workflow imports.
 
 ## Adding or removing a calendar
 
