@@ -43,10 +43,10 @@ docker run -d --name n8n -p 5678:5678 -v n8n_data:/home/node/.n8n n8n-calsync
 
 # 2. configure and build the workflow
 cp config/sources.example.json config/sources.json   # edit URLs + masterCalendarId
-python3 scripts/build_workflow.py                     # writes workflows/calsync.n8n.json
+python3 scripts/build_workflow.py                     # writes build/calsync.n8n.json (gitignored, contains your URLs)
 ```
 
-3. In n8n: *Workflows → Import from file* → `workflows/calsync.n8n.json`.
+3. In n8n: *Workflows → Import from file* → `build/calsync.n8n.json`.
 4. Open **Get Master Events**, **Create Event**, **Update Event**, **Delete Event** and select your Google Calendar credential.
 5. Run once manually and check the master calendar, then activate the workflow.
 

@@ -3,7 +3,8 @@
 import json, pathlib, sys
 root = pathlib.Path(__file__).resolve().parent.parent
 cfg_path = root / "config" / "sources.json"
-if not cfg_path.exists():
+real = cfg_path.exists()
+if not real:
     cfg_path = root / "config" / "sources.example.json"
     print(f"note: config/sources.json not found, using {cfg_path.name}", file=sys.stderr)
 cfg = json.loads(cfg_path.read_text())
@@ -73,6 +74,8 @@ connections = {
 }
 wf = {"name": "calSync", "nodes": nodes, "connections": connections,
       "settings": {"executionOrder": "v1"}, "active": False}
-out = root / "workflows" / "calsync.n8n.json"
+# Real config contains secret ICS URLs: write to gitignored build/, never to the tracked template.
+out = root / ("build" if real else "workflows") / "calsync.n8n.json"
+out.parent.mkdir(exist_ok=True)
 out.write_text(json.dumps(wf, indent=2) + "\n")
 print("wrote", out.relative_to(root))

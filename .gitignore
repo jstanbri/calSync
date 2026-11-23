@@ -2,3 +2,4 @@ config/sources.json
 .env
 node_modules/
 *.log
+build/
