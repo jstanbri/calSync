@@ -44,6 +44,8 @@ docker run -d --name n8n -p 5678:5678 -v n8n_data:/home/node/.n8n n8n-calsync
 # 2. configure and build the workflow
 cp config/sources.example.json config/sources.json   # edit URLs + masterCalendarId
 python3 scripts/build_workflow.py                     # writes build/calsync.n8n.json (gitignored, contains your URLs)
+# optional: CALSYNC_GCAL_CRED_ID=<n8n credential id> python3 scripts/build_workflow.py   # pre-links the Google credential
+# (python3 scripts/build_workflow.py --template rebuilds the tracked placeholder version)
 ```
 
 3. In n8n: *Workflows → Import from file* → `build/calsync.n8n.json`.
@@ -67,7 +69,9 @@ docker run --rm -v "$PWD":/w -w /w node:22-alpine sh -c "cd /tmp && npm i ical.j
 
 ## Status
 
-The dedupe/diff logic and the ICS parser have unit tests that pass. The assembled workflow has **not yet been run end to end** inside n8n against live calendars; treat the first run as a trial against a throwaway master calendar.
+The dedupe/diff logic and the ICS parser have unit tests that pass. The full workflow has been run end to end in n8n 2.48.8 against one live M365 feed and a dedicated master calendar: first run created the events, a re-run created only what was missing, and a third run was a no-op. Only one source has been tested so far; multi-source dedupe has only unit tests.
+
+To run it from the CLI: `docker exec -e N8N_RUNNERS_BROKER_PORT=5680 n8n n8n execute --id=calSyncWorkflow01` (the workflow has a **Manual Run** trigger as well as the daily schedule).
 
 ## Known limitations
 
@@ -75,6 +79,7 @@ The dedupe/diff logic and the ICS parser have unit tests that pass. The assemble
 - ICS feeds from M365 can lag by several hours, so the master is only as fresh as the upstream feed.
 - Attendees, reminders, and meeting links are not copied; only title, time, location, and description.
 - A master event edited by hand that calSync owns is overwritten when the source changes.
+- Event descriptions are copied verbatim, which can include Teams join links and meeting passcodes. Anyone with access to the master can see them (a "busy only" / strip-description option is on the roadmap).
 
 ## Roadmap
 

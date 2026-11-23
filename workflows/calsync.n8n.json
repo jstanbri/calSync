@@ -1,4 +1,5 @@
 {
+  "id": "calSyncWorkflow01",
   "name": "calSync",
   "nodes": [
     {
@@ -22,8 +23,19 @@
       ]
     },
     {
+      "parameters": {},
+      "id": "manual-run",
+      "name": "Manual Run",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        360
+      ]
+    },
+    {
       "parameters": {
-        "jsCode": "// n8n Code node \u2014 \"Load Config\", mode: Run Once for All Items.\n// The build script replaces {\n  \"settings\": {\n    \"daysBack\": 7,\n    \"daysForward\": 90,\n    \"masterCalendarId\": \"REPLACE_WITH_MASTER_GOOGLE_CALENDAR_ID\"\n  },\n  \"sources\": [\n    {\n      \"name\": \"M365 Work 1\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W1] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"M365 Work 2\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W2] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"M365 Work 3\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W3] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"M365 Work 4\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W4] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"Google Personal\",\n      \"type\": \"ics\",\n      \"url\": \"https://calendar.google.com/calendar/ical/REPLACE/private-REPLACE/basic.ics\",\n      \"prefix\": \"\",\n      \"enabled\": true\n    }\n  ]\n} with config/sources.json.\nconst CONFIG = {\n  \"settings\": {\n    \"daysBack\": 7,\n    \"daysForward\": 90,\n    \"masterCalendarId\": \"REPLACE_WITH_MASTER_GOOGLE_CALENDAR_ID\"\n  },\n  \"sources\": [\n    {\n      \"name\": \"M365 Work 1\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W1] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"M365 Work 2\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W2] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"M365 Work 3\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W3] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"M365 Work 4\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W4] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"Google Personal\",\n      \"type\": \"ics\",\n      \"url\": \"https://calendar.google.com/calendar/ical/REPLACE/private-REPLACE/basic.ics\",\n      \"prefix\": \"\",\n      \"enabled\": true\n    }\n  ]\n};\nreturn CONFIG.sources\n  .filter(s => s.enabled !== false)\n  .map(source => ({ json: { settings: CONFIG.settings, source } }));\n"
+        "jsCode": "// n8n Code node \u2014 \"Load Config\", mode: Run Once for All Items.\n// The build script injects config/sources.json in place of the placeholder below.\nconst CONFIG = {\n  \"settings\": {\n    \"daysBack\": 7,\n    \"daysForward\": 90,\n    \"masterCalendarId\": \"REPLACE_WITH_MASTER_GOOGLE_CALENDAR_ID\"\n  },\n  \"sources\": [\n    {\n      \"name\": \"M365 Work 1\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W1] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"M365 Work 2\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W2] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"M365 Work 3\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W3] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"M365 Work 4\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W4] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"Google Personal\",\n      \"type\": \"ics\",\n      \"url\": \"https://calendar.google.com/calendar/ical/REPLACE/private-REPLACE/basic.ics\",\n      \"prefix\": \"\",\n      \"enabled\": true\n    }\n  ]\n};\nreturn CONFIG.sources\n  .filter(s => s.enabled !== false)\n  .map(source => ({ json: { settings: CONFIG.settings, source } }));\n"
       },
       "id": "load-config",
       "name": "Load Config",
@@ -236,6 +248,14 @@
         "url": "={{ 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent($json.calendarId) + '/events' }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleCalendarOAuth2Api",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 250
+            }
+          }
+        },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.body) }}"
@@ -254,17 +274,25 @@
           "name": "Google Calendar account"
         }
       },
-      "retryOnFail": true
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
         "method": "PUT",
-        "url": "={{ 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent($json.calendarId) + '/events/' + $json.id }}",
+        "url": "={{ 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent($('Dedupe and Diff').item.json.calendarId) + '/events/' + $('Dedupe and Diff').item.json.id }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleCalendarOAuth2Api",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 250
+            }
+          }
+        },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json.body) }}"
+        "jsonBody": "={{ JSON.stringify($('Dedupe and Diff').item.json.body) }}"
       },
       "id": "update-event",
       "name": "Update Event",
@@ -272,7 +300,7 @@
       "typeVersion": 4.2,
       "position": [
         1560,
-        220
+        260
       ],
       "credentials": {
         "googleCalendarOAuth2Api": {
@@ -287,7 +315,15 @@
         "method": "DELETE",
         "url": "={{ 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent($json.calendarId) + '/events/' + $json.id }}",
         "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "googleCalendarOAuth2Api"
+        "nodeCredentialType": "googleCalendarOAuth2Api",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 250
+            }
+          }
+        }
       },
       "id": "delete-event",
       "name": "Delete Event",
@@ -295,7 +331,7 @@
       "typeVersion": 4.2,
       "position": [
         1560,
-        360
+        440
       ],
       "credentials": {
         "googleCalendarOAuth2Api": {
@@ -308,6 +344,17 @@
   ],
   "connections": {
     "Daily 05:00": {
+      "main": [
+        [
+          {
+            "node": "Load Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Run": {
       "main": [
         [
           {
@@ -408,6 +455,18 @@
         [
           {
             "node": "Delete Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Event": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Update Event",
             "type": "main",
             "index": 0
           }

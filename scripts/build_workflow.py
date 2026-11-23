@@ -3,16 +3,18 @@
 import json, pathlib, sys
 root = pathlib.Path(__file__).resolve().parent.parent
 cfg_path = root / "config" / "sources.json"
-real = cfg_path.exists()
+real = cfg_path.exists() and "--template" not in sys.argv  # --template: rebuild the tracked placeholder workflow
 if not real:
     cfg_path = root / "config" / "sources.example.json"
-    print(f"note: config/sources.json not found, using {cfg_path.name}", file=sys.stderr)
+    print(f"note: using {cfg_path.name}", file=sys.stderr)
 cfg = json.loads(cfg_path.read_text())
 code = lambda n: (root / "src" / n).read_text()
 
 GCAL = "https://www.googleapis.com/calendar/v3/calendars/"
 cal_url = "={{ '" + GCAL + "' + encodeURIComponent($('Load Config').first().json.settings.masterCalendarId) + '/events' }}"
-cred = {"googleCalendarOAuth2Api": {"id": "", "name": "Google Calendar account"}}
+import os
+# Optional: CALSYNC_GCAL_CRED_ID=<n8n credential id> pre-links the Google credential on the HTTP nodes.
+cred = {"googleCalendarOAuth2Api": {"id": os.environ.get("CALSYNC_GCAL_CRED_ID", ""), "name": "Google Calendar account"}}
 gauth = {"authentication": "predefinedCredentialType", "nodeCredentialType": "googleCalendarOAuth2Api"}
 
 def node(name, type_, ver, pos, params, **kw):
@@ -21,12 +23,15 @@ def node(name, type_, ver, pos, params, **kw):
     n.update(kw)
     return n
 
-def write(name, method, pos, url_expr):
+PACE = {"options": {"batching": {"batch": {"batchSize": 1, "batchInterval": 250}}}}
+# Update reads its inputs from "Dedupe and Diff" so it works both from the Switch and from Create's 409 error branch.
+SRC = "$('Dedupe and Diff').item.json"
+
+def write(name, method, pos, url_expr, body_expr="={{ JSON.stringify($json.body) }}", **kw):
     return node(name, "n8n-nodes-base.httpRequest", 4.2, pos, {
-        "method": method, "url": url_expr, **gauth,
-        **({} if method == "DELETE" else {"sendBody": True, "specifyBody": "json",
-                                           "jsonBody": "={{ JSON.stringify($json.body) }}"}),
-    }, credentials=cred, retryOnFail=True)
+        "method": method, "url": url_expr, **gauth, **PACE,
+        **({} if method == "DELETE" else {"sendBody": True, "specifyBody": "json", "jsonBody": body_expr}),
+    }, credentials=cred, **kw)
 
 item_url = "={{ '" + GCAL + "' + encodeURIComponent($json.calendarId) + '/events/' + $json.id }}"
 ins_url = "={{ '" + GCAL + "' + encodeURIComponent($json.calendarId) + '/events' }}"
@@ -34,6 +39,7 @@ ins_url = "={{ '" + GCAL + "' + encodeURIComponent($json.calendarId) + '/events'
 nodes = [
     node("Daily 05:00", "n8n-nodes-base.scheduleTrigger", 1.2, [0, 200],
          {"rule": {"interval": [{"field": "cronExpression", "expression": "0 5 * * *"}]}}),
+    node("Manual Run", "n8n-nodes-base.manualTrigger", 1, [0, 360], {}),
     node("Load Config", "n8n-nodes-base.code", 2, [220, 200], {"jsCode": code("load_config.js").replace("__CONFIG__", json.dumps(cfg, indent=2))}),
     node("Fetch ICS", "n8n-nodes-base.httpRequest", 4.2, [440, 100], {
         "url": "={{ $json.source.url }}",
@@ -57,13 +63,16 @@ nodes = [
                         "combinator": "and", "conditions": [{"leftValue": "={{ $json.action }}", "rightValue": a,
                                                               "operator": {"type": "string", "operation": "equals"}}]},
          "renameOutput": True, "outputKey": a} for a in ("create", "update", "delete")]}, "options": {}}),
-    write("Create Event", "POST", [1560, 80], ins_url),
-    write("Update Event", "PUT", [1560, 220], item_url),
-    write("Delete Event", "DELETE", [1560, 360], item_url),
+    # Create: no blind retries; any error (notably 409 "id already exists") goes to the error output -> Update.
+    write("Create Event", "POST", [1560, 80], ins_url, onError="continueErrorOutput"),
+    write("Update Event", "PUT", [1560, 260], "={{ 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(" + SRC + ".calendarId) + '/events/' + " + SRC + ".id }}",
+          "={{ JSON.stringify(" + SRC + ".body) }}", retryOnFail=True),
+    write("Delete Event", "DELETE", [1560, 440], item_url, retryOnFail=True),
 ]
 conn = lambda *outs: {"main": [[{"node": t, "type": "main", "index": 0} for t in o] for o in outs]}
 connections = {
     "Daily 05:00": conn(["Load Config"]),
+    "Manual Run": conn(["Load Config"]),
     "Load Config": conn(["Fetch ICS", "Get Master Events"]),
     "Fetch ICS": conn(["Parse ICS"]),
     "Parse ICS": conn(["Combine"]),
@@ -71,8 +80,9 @@ connections = {
     "Combine": conn(["Dedupe and Diff"]),
     "Dedupe and Diff": conn(["Route Action"]),
     "Route Action": conn(["Create Event"], ["Update Event"], ["Delete Event"]),
+    "Create Event": conn([], ["Update Event"]),
 }
-wf = {"name": "calSync", "nodes": nodes, "connections": connections,
+wf = {"id": "calSyncWorkflow01", "name": "calSync", "nodes": nodes, "connections": connections,
       "settings": {"executionOrder": "v1"}, "active": False}
 # Real config contains secret ICS URLs: write to gitignored build/, never to the tracked template.
 out = root / ("build" if real else "workflows") / "calsync.n8n.json"

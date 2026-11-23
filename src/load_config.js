@@ -1,5 +1,5 @@
 // n8n Code node — "Load Config", mode: Run Once for All Items.
-// The build script replaces __CONFIG__ with config/sources.json.
+// The build script injects config/sources.json in place of the placeholder below.
 const CONFIG = __CONFIG__;
 return CONFIG.sources
   .filter(s => s.enabled !== false)
