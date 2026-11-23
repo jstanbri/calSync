@@ -1,0 +1,422 @@
+{
+  "name": "calSync",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 5 * * *"
+            }
+          ]
+        }
+      },
+      "id": "daily-05:00",
+      "name": "Daily 05:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code node \u2014 \"Load Config\", mode: Run Once for All Items.\n// The build script replaces {\n  \"settings\": {\n    \"daysBack\": 7,\n    \"daysForward\": 90,\n    \"masterCalendarId\": \"REPLACE_WITH_MASTER_GOOGLE_CALENDAR_ID\"\n  },\n  \"sources\": [\n    {\n      \"name\": \"M365 Work 1\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W1] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"M365 Work 2\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W2] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"M365 Work 3\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W3] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"M365 Work 4\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W4] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"Google Personal\",\n      \"type\": \"ics\",\n      \"url\": \"https://calendar.google.com/calendar/ical/REPLACE/private-REPLACE/basic.ics\",\n      \"prefix\": \"\",\n      \"enabled\": true\n    }\n  ]\n} with config/sources.json.\nconst CONFIG = {\n  \"settings\": {\n    \"daysBack\": 7,\n    \"daysForward\": 90,\n    \"masterCalendarId\": \"REPLACE_WITH_MASTER_GOOGLE_CALENDAR_ID\"\n  },\n  \"sources\": [\n    {\n      \"name\": \"M365 Work 1\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W1] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"M365 Work 2\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W2] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"M365 Work 3\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W3] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"M365 Work 4\",\n      \"type\": \"ics\",\n      \"url\": \"https://outlook.office365.com/owa/calendar/REPLACE/calendar.ics\",\n      \"prefix\": \"[W4] \",\n      \"enabled\": true\n    },\n    {\n      \"name\": \"Google Personal\",\n      \"type\": \"ics\",\n      \"url\": \"https://calendar.google.com/calendar/ical/REPLACE/private-REPLACE/basic.ics\",\n      \"prefix\": \"\",\n      \"enabled\": true\n    }\n  ]\n};\nreturn CONFIG.sources\n  .filter(s => s.enabled !== false)\n  .map(source => ({ json: { settings: CONFIG.settings, source } }));\n"
+      },
+      "id": "load-config",
+      "name": "Load Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.source.url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text",
+              "outputPropertyName": "data"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "fetch-ics",
+      "name": "Fetch ICS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        100
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// n8n Code node \u2014 \"Parse ICS\", mode: Run Once for Each Item.\n// Input: HTTP Request output (ICS text in $json.data) paired with the \"Load Config\" item.\n// Output: one item per event occurrence inside the window, or an error marker.\n// Needs NODE_FUNCTION_ALLOW_EXTERNAL=ical.js\nconst ICAL = require('ical.js');\nconst cfg = $('Load Config').item.json;\nconst { daysBack, daysForward } = cfg.settings;\nconst src = cfg.source;\n\nif ($json.error || typeof $json.data !== 'string' || !$json.data.includes('BEGIN:VCALENDAR')) {\n  return { json: { _kind: 'error', source: src.name, message: String($json.error?.message || 'no ICS data') } };\n}\n\nconst now = Date.now();\nconst winStart = now - daysBack * 864e5;\nconst winEnd = now + daysForward * 864e5;\n\nconst root = new ICAL.Component(ICAL.parse($json.data));\nroot.getAllSubcomponents('vtimezone').forEach(tz => {\n  try { ICAL.TimezoneService.register(tz); } catch (e) {}\n});\n\nconst out = [];\nconst push = (ev, startT, endT) => {\n  const allDay = startT.isDate;\n  const s = startT.toJSDate();\n  const e = endT.toJSDate();\n  if (e.getTime() < winStart || s.getTime() > winEnd) return;\n  out.push({ json: {\n    _kind: 'event',\n    source: src.name,\n    prefix: src.prefix || '',\n    title: ev.summary || '(no title)',\n    location: ev.location || '',\n    description: ev.description || '',\n    allDay,\n    start: s.toISOString(),\n    end: e.toISOString(),\n    startDate: allDay ? startT.toString() : null,\n    endDate: allDay ? endT.toString() : null,\n  } });\n};\n\nconst masters = root.getAllSubcomponents('vevent').filter(v => !v.hasProperty('recurrence-id'));\nconst overrides = root.getAllSubcomponents('vevent').filter(v => v.hasProperty('recurrence-id'));\nconst overridden = new Set(overrides.map(v => v.getFirstPropertyValue('uid') + '|' + v.getFirstPropertyValue('recurrence-id').toJSDate().getTime()));\n\nfor (const comp of masters) {\n  const ev = new ICAL.Event(comp);\n  if (comp.getFirstPropertyValue('status') === 'CANCELLED') continue;\n  if (ev.isRecurring()) {\n    const it = ev.iterator();\n    let next, guard = 0;\n    while ((next = it.next()) && guard++ < 2000) {\n      if (next.toJSDate().getTime() > winEnd) break;\n      if (overridden.has(ev.uid + '|' + next.toJSDate().getTime())) continue;\n      const d = ev.getOccurrenceDetails(next);\n      push(ev, d.startDate, d.endDate);\n    }\n  } else {\n    push(ev, ev.startDate, ev.endDate);\n  }\n}\nfor (const comp of overrides) {\n  if (comp.getFirstPropertyValue('status') === 'CANCELLED') continue;\n  const ev = new ICAL.Event(comp);\n  push(ev, ev.startDate, ev.endDate);\n}\n\n// Run-once-for-each-item must return one item; wrap list so Dedupe can flatten.\nreturn { json: { _kind: 'batch', source: src.name, events: out.map(o => o.json) } };\n"
+      },
+      "id": "parse-ics",
+      "name": "Parse ICS",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent($('Load Config').first().json.settings.masterCalendarId) + '/events' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleCalendarOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "privateExtendedProperty",
+              "value": "calSync=1"
+            },
+            {
+              "name": "timeMin",
+              "value": "={{ new Date(Date.now() - $json.settings.daysBack * 864e5).toISOString() }}"
+            },
+            {
+              "name": "timeMax",
+              "value": "={{ new Date(Date.now() + $json.settings.daysForward * 864e5).toISOString() }}"
+            },
+            {
+              "name": "singleEvents",
+              "value": "true"
+            },
+            {
+              "name": "showDeleted",
+              "value": "false"
+            },
+            {
+              "name": "maxResults",
+              "value": "2500"
+            }
+          ]
+        }
+      },
+      "id": "get-master-events",
+      "name": "Get Master Events",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Calendar account"
+        }
+      },
+      "executeOnce": true
+    },
+    {
+      "parameters": {},
+      "id": "combine",
+      "name": "Combine",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        880,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code node \u2014 \"Dedupe & Diff\", mode: Run Once for All Items.\n// Input (merged): per-source batches from \"Parse ICS\" ({_kind:'batch', events:[...]})\n//   plus one item from \"Get Master Events\" ({items:[...]} from the Google Calendar API).\n// Output: one item per write needed: {action:'create'|'update'|'delete', calendarId, id, body?}\n\n// cyrb53 string hash (two seeds -> ~28 hex chars). Google event ids allow [a-v0-9], hex is a subset.\nfunction cyrb53(str, seed) {\n  let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;\n  for (let i = 0; i < str.length; i++) {\n    const ch = str.charCodeAt(i);\n    h1 = Math.imul(h1 ^ ch, 2654435761);\n    h2 = Math.imul(h2 ^ ch, 1597334677);\n  }\n  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);\n  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);\n  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(14, '0');\n}\nconst hash = s => cyrb53(s, 1) + cyrb53(s, 2);\nconst norm = t => String(t).toLowerCase().replace(/\\s+/g, ' ').trim();\n\nfunction computeDiff(batches, masterItems, settings, sourceErrors) {\n  // 1. dedupe \u2014 first source listed wins\n  const desired = new Map();\n  const seen = new Set();\n  for (const b of batches) {\n    for (const e of b.events) {\n      const key = norm(e.title) + '|' + (e.allDay ? e.startDate + '/' + e.endDate : e.start + '/' + e.end);\n      if (seen.has(key)) continue;\n      seen.add(key);\n      const id = 'cs' + hash(key);\n      const body = {\n        id,\n        summary: (e.prefix || '') + e.title,\n        location: e.location || undefined,\n        description: ((e.description || '') + '\\n\\n[calSync source: ' + e.source + ']').trim(),\n        start: e.allDay ? { date: e.startDate } : { dateTime: e.start },\n        end: e.allDay ? { date: e.endDate } : { dateTime: e.end },\n      };\n      body.extendedProperties = { private: { calSync: '1', contentHash: hash(JSON.stringify(body)) } };\n      desired.set(id, body);\n    }\n  }\n\n  // 2. diff against what calSync previously wrote to the master\n  const existing = new Map(masterItems.map(m => [m.id, m]));\n  const out = [];\n  const calendarId = settings.masterCalendarId;\n  for (const [id, body] of desired) {\n    const ex = existing.get(id);\n    if (!ex) out.push({ action: 'create', calendarId, id, body });\n    else if (ex.extendedProperties?.private?.contentHash !== body.extendedProperties.private.contentHash || ex.status === 'cancelled')\n      out.push({ action: 'update', calendarId, id, body });\n  }\n  // 3. deletions \u2014 skipped if any source failed or nothing came back (avoid wiping master on an outage)\n  if (sourceErrors === 0 && desired.size > 0) {\n    for (const id of existing.keys()) if (!desired.has(id)) out.push({ action: 'delete', calendarId, id });\n  }\n  return out;\n}\n\nif (typeof module !== 'undefined') module.exports = { computeDiff, hash, norm };\n\nif (typeof $input !== 'undefined') {\n  const settings = $('Load Config').first().json.settings;\n  const all = $input.all().map(i => i.json);\n  const batches = all.filter(j => j._kind === 'batch');\n  const sourceErrors = all.filter(j => j._kind === 'error').length;\n  const masterItems = all.filter(j => Array.isArray(j.items)).flatMap(j => j.items);\n  const diff = computeDiff(batches, masterItems, settings, sourceErrors);\n  if (diff.length === 0) return [{ json: { action: 'noop', sourceErrors } }];\n  return diff.map(d => ({ json: d }));\n}\n"
+      },
+      "id": "dedupe-and-diff",
+      "name": "Dedupe and Diff",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "create",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "create"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "update",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "update"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "delete"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "route-action",
+      "name": "Route Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1320,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent($json.calendarId) + '/events' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleCalendarOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}"
+      },
+      "id": "create-event",
+      "name": "Create Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        80
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Calendar account"
+        }
+      },
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent($json.calendarId) + '/events/' + $json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleCalendarOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}"
+      },
+      "id": "update-event",
+      "name": "Update Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        220
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Calendar account"
+        }
+      },
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "={{ 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent($json.calendarId) + '/events/' + $json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleCalendarOAuth2Api"
+      },
+      "id": "delete-event",
+      "name": "Delete Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        360
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": "Google Calendar account"
+        }
+      },
+      "retryOnFail": true
+    }
+  ],
+  "connections": {
+    "Daily 05:00": {
+      "main": [
+        [
+          {
+            "node": "Load Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch ICS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Master Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch ICS": {
+      "main": [
+        [
+          {
+            "node": "Parse ICS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse ICS": {
+      "main": [
+        [
+          {
+            "node": "Combine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Master Events": {
+      "main": [
+        [
+          {
+            "node": "Combine",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Combine": {
+      "main": [
+        [
+          {
+            "node": "Dedupe and Diff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dedupe and Diff": {
+      "main": [
+        [
+          {
+            "node": "Route Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Action": {
+      "main": [
+        [
+          {
+            "node": "Create Event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Delete Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}
