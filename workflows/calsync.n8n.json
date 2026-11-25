@@ -383,7 +383,7 @@
           "batching": {
             "batch": {
               "batchSize": 1,
-              "batchInterval": 250
+              "batchInterval": 500
             }
           }
         },
@@ -411,7 +411,7 @@
           "batching": {
             "batch": {
               "batchSize": 1,
-              "batchInterval": 250
+              "batchInterval": 500
             }
           }
         },
@@ -427,7 +427,7 @@
         1780,
         260
       ],
-      "retryOnFail": true
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -439,7 +439,7 @@
           "batching": {
             "batch": {
               "batchSize": 1,
-              "batchInterval": 250
+              "batchInterval": 500
             }
           }
         }
@@ -452,7 +452,360 @@
         1780,
         440
       ],
-      "retryOnFail": true
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// n8n Code node \u2014 \"<Op> Error\", mode: Run Once for Each Item.\n// Input: an HTTP write node's error output (the item it was sent, plus $json.error).\n// Output: the item plus { route, attempts }. The build script replaces create with create|update|delete.\nconst MAX_RETRIES = 5;\n\n// route: 'exists' (create only: switch to update) | 'gone' (delete only: nothing to do) | 'retry' | 'fatal'\nfunction classify(op, error, retriesSoFar) {\n  const text = JSON.stringify(error || {});\n  // Where n8n puts the HTTP status varies: httpCode, a \"403 - {...}\" message, or (429) only the stack trace.\n  const status = Number((text.match(/\"httpCode\":\"?(\\d{3})/) || text.match(/\"(\\d{3}) - /) ||\n    text.match(/status code (\\d{3})/) || [])[1]) || 0;\n  if (op === 'create' && (status === 409 || /already exists/i.test(text))) return 'exists';\n  if (op === 'delete' && (status === 404 || status === 410 || /has been deleted|could not be found/i.test(text))) return 'gone';\n  const transient = status === 429 || status >= 500 ||\n    /rateLimitExceeded|rate limit exceeded|too many requests|ECONNRESET|ETIMEDOUT|ECONNABORTED|EAI_AGAIN/i.test(text);\n  return transient && retriesSoFar < MAX_RETRIES ? 'retry' : 'fatal';\n}\n\nif (typeof module !== 'undefined') module.exports = { classify, MAX_RETRIES };\n\nif (typeof $json !== 'undefined') {\n  const op = 'create';\n  const attempts = { ...($json.attempts || {}) };\n  const route = classify(op, $json.error, attempts[op] || 0);\n  if (route === 'retry') attempts[op] = (attempts[op] || 0) + 1;\n  return { json: { ...$json, route, attempts } };\n}\n"
+      },
+      "id": "create-error",
+      "name": "Create Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "retry",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "retry"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "fatal",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "fatal"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "exists",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "exists"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "create-error-route",
+      "name": "Create Error Route",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        2220,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "amount": "={{ Math.min(60, 5 * 2 ** $json.attempts.create) }}",
+        "unit": "seconds"
+      },
+      "id": "create-backoff",
+      "name": "Create Backoff",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2440,
+        80
+      ],
+      "webhookId": "calsync-create-backoff"
+    },
+    {
+      "parameters": {
+        "errorMessage": "={{ 'calSync create failed: ' + ($json.error.description || $json.error.message) }}"
+      },
+      "id": "create-failed",
+      "name": "Create Failed",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        2440,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// n8n Code node \u2014 \"<Op> Error\", mode: Run Once for Each Item.\n// Input: an HTTP write node's error output (the item it was sent, plus $json.error).\n// Output: the item plus { route, attempts }. The build script replaces update with create|update|delete.\nconst MAX_RETRIES = 5;\n\n// route: 'exists' (create only: switch to update) | 'gone' (delete only: nothing to do) | 'retry' | 'fatal'\nfunction classify(op, error, retriesSoFar) {\n  const text = JSON.stringify(error || {});\n  // Where n8n puts the HTTP status varies: httpCode, a \"403 - {...}\" message, or (429) only the stack trace.\n  const status = Number((text.match(/\"httpCode\":\"?(\\d{3})/) || text.match(/\"(\\d{3}) - /) ||\n    text.match(/status code (\\d{3})/) || [])[1]) || 0;\n  if (op === 'create' && (status === 409 || /already exists/i.test(text))) return 'exists';\n  if (op === 'delete' && (status === 404 || status === 410 || /has been deleted|could not be found/i.test(text))) return 'gone';\n  const transient = status === 429 || status >= 500 ||\n    /rateLimitExceeded|rate limit exceeded|too many requests|ECONNRESET|ETIMEDOUT|ECONNABORTED|EAI_AGAIN/i.test(text);\n  return transient && retriesSoFar < MAX_RETRIES ? 'retry' : 'fatal';\n}\n\nif (typeof module !== 'undefined') module.exports = { classify, MAX_RETRIES };\n\nif (typeof $json !== 'undefined') {\n  const op = 'update';\n  const attempts = { ...($json.attempts || {}) };\n  const route = classify(op, $json.error, attempts[op] || 0);\n  if (route === 'retry') attempts[op] = (attempts[op] || 0) + 1;\n  return { json: { ...$json, route, attempts } };\n}\n"
+      },
+      "id": "update-error",
+      "name": "Update Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "retry",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "retry"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "fatal",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "fatal"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-error-route",
+      "name": "Update Error Route",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        2220,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "amount": "={{ Math.min(60, 5 * 2 ** $json.attempts.update) }}",
+        "unit": "seconds"
+      },
+      "id": "update-backoff",
+      "name": "Update Backoff",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2440,
+        260
+      ],
+      "webhookId": "calsync-update-backoff"
+    },
+    {
+      "parameters": {
+        "errorMessage": "={{ 'calSync update failed: ' + ($json.error.description || $json.error.message) }}"
+      },
+      "id": "update-failed",
+      "name": "Update Failed",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        2440,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// n8n Code node \u2014 \"<Op> Error\", mode: Run Once for Each Item.\n// Input: an HTTP write node's error output (the item it was sent, plus $json.error).\n// Output: the item plus { route, attempts }. The build script replaces delete with create|update|delete.\nconst MAX_RETRIES = 5;\n\n// route: 'exists' (create only: switch to update) | 'gone' (delete only: nothing to do) | 'retry' | 'fatal'\nfunction classify(op, error, retriesSoFar) {\n  const text = JSON.stringify(error || {});\n  // Where n8n puts the HTTP status varies: httpCode, a \"403 - {...}\" message, or (429) only the stack trace.\n  const status = Number((text.match(/\"httpCode\":\"?(\\d{3})/) || text.match(/\"(\\d{3}) - /) ||\n    text.match(/status code (\\d{3})/) || [])[1]) || 0;\n  if (op === 'create' && (status === 409 || /already exists/i.test(text))) return 'exists';\n  if (op === 'delete' && (status === 404 || status === 410 || /has been deleted|could not be found/i.test(text))) return 'gone';\n  const transient = status === 429 || status >= 500 ||\n    /rateLimitExceeded|rate limit exceeded|too many requests|ECONNRESET|ETIMEDOUT|ECONNABORTED|EAI_AGAIN/i.test(text);\n  return transient && retriesSoFar < MAX_RETRIES ? 'retry' : 'fatal';\n}\n\nif (typeof module !== 'undefined') module.exports = { classify, MAX_RETRIES };\n\nif (typeof $json !== 'undefined') {\n  const op = 'delete';\n  const attempts = { ...($json.attempts || {}) };\n  const route = classify(op, $json.error, attempts[op] || 0);\n  if (route === 'retry') attempts[op] = (attempts[op] || 0) + 1;\n  return { json: { ...$json, route, attempts } };\n}\n"
+      },
+      "id": "delete-error",
+      "name": "Delete Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "retry",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "retry"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "fatal",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "fatal"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "gone",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "gone"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "delete-error-route",
+      "name": "Delete Error Route",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        2220,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "amount": "={{ Math.min(60, 5 * 2 ** $json.attempts.delete) }}",
+        "unit": "seconds"
+      },
+      "id": "delete-backoff",
+      "name": "Delete Backoff",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2440,
+        440
+      ],
+      "webhookId": "calsync-delete-backoff"
+    },
+    {
+      "parameters": {
+        "errorMessage": "={{ 'calSync delete failed: ' + ($json.error.description || $json.error.message) }}"
+      },
+      "id": "delete-failed",
+      "name": "Delete Failed",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        2440,
+        540
+      ]
     }
   ],
   "connections": {
@@ -619,7 +972,159 @@
         [],
         [
           {
+            "node": "Create Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Error": {
+      "main": [
+        [
+          {
+            "node": "Create Error Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Error Route": {
+      "main": [
+        [
+          {
+            "node": "Create Backoff",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Failed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Update Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Backoff": {
+      "main": [
+        [
+          {
+            "node": "Create Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Event": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Update Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Error": {
+      "main": [
+        [
+          {
+            "node": "Update Error Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Error Route": {
+      "main": [
+        [
+          {
+            "node": "Update Backoff",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Backoff": {
+      "main": [
+        [
+          {
+            "node": "Update Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Event": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Delete Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Error": {
+      "main": [
+        [
+          {
+            "node": "Delete Error Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Error Route": {
+      "main": [
+        [
+          {
+            "node": "Delete Backoff",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Delete Failed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Delete Backoff": {
+      "main": [
+        [
+          {
+            "node": "Delete Event",
             "type": "main",
             "index": 0
           }
@@ -628,7 +1133,8 @@
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "timezone": "Europe/London"
   },
   "active": false
 }

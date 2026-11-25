@@ -1,0 +1,20 @@
+# n8n for calSync on an always-on Docker host (e.g. a NAS). See README "Deploying to a NAS".
+services:
+  n8n:
+    build: ./docker
+    image: n8n-calsync:2.48.8
+    container_name: n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"   # LAN only. Do not forward this port from your router.
+    environment:
+      TZ: Europe/London
+      GENERIC_TIMEZONE: Europe/London
+      # Allows logging in over plain http on the LAN. Remove if you put n8n behind HTTPS.
+      N8N_SECURE_COOKIE: "false"
+    volumes:
+      - n8n_data:/home/node/.n8n   # database, credentials and encryption key
+
+volumes:
+  n8n_data:
+    external: true   # create once: docker volume create n8n_data

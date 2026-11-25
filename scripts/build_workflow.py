@@ -32,7 +32,7 @@ def node(name, type_, ver, pos, params, **kw):
     n.update(kw)
     return n
 
-PACE = {"options": {"batching": {"batch": {"batchSize": 1, "batchInterval": 250}}}}
+PACE = {"options": {"batching": {"batch": {"batchSize": 1, "batchInterval": 500}}}}
 # Update reads its inputs from "Dedupe and Diff" so it works both from the Switch and from Create's 409 error branch.
 SRC = "$('Dedupe and Diff').item.json"
 
@@ -92,11 +92,12 @@ nodes = [
                         "combinator": "and", "conditions": [{"leftValue": "={{ $json.action }}", "rightValue": a,
                                                               "operator": {"type": "string", "operation": "equals"}}]},
          "renameOutput": True, "outputKey": a} for a in ("create", "update", "delete")]}, "options": {}}),
-    # Create: no blind retries; any error (notably 409 "id already exists") goes to the error output -> Update.
+    # No node-level retryOnFail on writes: it re-sends the whole batch. Failed items go to the error output,
+    # are classified by "<Op> Error", and only those are retried.
     write("Create Event", "POST", [1780, 80], ins_url, onError="continueErrorOutput"),
     write("Update Event", "PUT", [1780, 260], "={{ 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(" + SRC + ".calendarId) + '/events/' + " + SRC + ".id }}",
-          "={{ JSON.stringify(" + SRC + ".body) }}", retryOnFail=True),
-    write("Delete Event", "DELETE", [1780, 440], item_url, retryOnFail=True),
+          "={{ JSON.stringify(" + SRC + ".body) }}", onError="continueErrorOutput"),
+    write("Delete Event", "DELETE", [1780, 440], item_url, onError="continueErrorOutput"),
 ]
 conn = lambda *outs: {"main": [[{"node": t, "type": "main", "index": 0} for t in o] for o in outs]}
 connections = {
@@ -112,10 +113,37 @@ connections = {
     "Combine": conn(["Dedupe and Diff"]),
     "Dedupe and Diff": conn(["Route Action"]),
     "Route Action": conn(["Create Event"], ["Update Event"], ["Delete Event"]),
-    "Create Event": conn([], ["Update Event"]),
 }
+# Error handling per write: exists -> Update, retry -> wait with backoff and re-send, gone -> done, else fail the run.
+def route_is(value):
+    return {"conditions": {"options": {"caseSensitive": True, "typeValidation": "strict", "version": 2},
+                           "combinator": "and", "conditions": [{"leftValue": "={{ $json.route }}", "rightValue": value,
+                                                                "operator": {"type": "string", "operation": "equals"}}]},
+            "renameOutput": True, "outputKey": value}
+
+for op, y in (("create", 80), ("update", 260), ("delete", 440)):
+    Op = op.title()
+    routes = ["retry", "fatal"] + {"create": ["exists"], "update": [], "delete": ["gone"]}[op]
+    wait = node(f"{Op} Backoff", "n8n-nodes-base.wait", 1.1, [2440, y],
+                {"amount": "={{ Math.min(60, 5 * 2 ** $json.attempts." + op + ") }}", "unit": "seconds"},
+                webhookId=f"calsync-{op}-backoff")
+    nodes += [
+        node(f"{Op} Error", "n8n-nodes-base.code", 2, [2000, y],
+             {"mode": "runOnceForEachItem", "jsCode": code("write_error.js").replace("__OP__", op)}),
+        node(f"{Op} Error Route", "n8n-nodes-base.switch", 3.2, [2220, y],
+             {"rules": {"values": [route_is(r) for r in routes]}, "options": {}}),
+        wait,
+        node(f"{Op} Failed", "n8n-nodes-base.stopAndError", 1, [2440, y + 100],
+             {"errorMessage": "={{ 'calSync " + op + " failed: ' + ($json.error.description || $json.error.message) }}"}),
+    ]
+    connections[f"{Op} Event"] = conn([], [f"{Op} Error"])
+    connections[f"{Op} Error"] = conn([f"{Op} Error Route"])
+    targets = {"retry": [f"{Op} Backoff"], "fatal": [f"{Op} Failed"], "exists": ["Update Event"], "gone": []}
+    connections[f"{Op} Error Route"] = conn(*[targets[r] for r in routes])
+    connections[f"{Op} Backoff"] = conn([f"{Op} Event"])
+
 wf = {"id": "calSyncWorkflow01", "name": "calSync", "nodes": nodes, "connections": connections,
-      "settings": {"executionOrder": "v1"}, "active": False}
+      "settings": {"executionOrder": "v1", "timezone": "Europe/London"}, "active": False}
 # Real config contains secret ICS URLs: write to gitignored build/, never to the tracked template.
 out = root / ("build" if real else "workflows") / "calsync.n8n.json"
 out.parent.mkdir(exist_ok=True)
